@@ -1,0 +1,2 @@
+两个线程同时调用insert(key, value, &table[i], table[i])
+如果先insert的线程还未返回另一个线程就开始insert，那么前面的数据会被覆盖
