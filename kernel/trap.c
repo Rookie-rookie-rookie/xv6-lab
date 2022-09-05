@@ -65,6 +65,10 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if(r_scause() == 13 || r_scause() == 15){
+    uint64 vaddr = r_stval();
+    if(vaddr >= p->sz || cowpage(p->pagetable,vaddr) != 0 || cowalloc(p->pagetable,PGROUNDDOWN(vaddr)) == 0)
+      p->killed = 1;
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
