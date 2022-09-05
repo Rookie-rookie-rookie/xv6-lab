@@ -326,16 +326,16 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     // if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
     //   kfree(mem);
     //   goto err;
-    // }
+    // } 取消复制的时候新开内存
     if(flags & PTE_W){
-      flags = (flags | PTE_F) & ~PTE_W;
+      flags = (flags | PTE_F) & ~PTE_W;  //设置为不可写，同时设置写时复制
       *pte = PA2PTE(pa) | flags;
     }
 
     if(mappages(new,i,PGSIZE,(uint64)pa,flags) != 0){
       goto err;
     }
-    kaddrefcnt((char*)pa);
+    kaddrefcnt((char*)pa);    //有两个进程引用此地址，引用数加一
   }
   return 0;
 
@@ -370,7 +370,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     pa0 = walkaddr(pagetable, va0);
 
     if(cowpage(pagetable,va0) == 0){
-      pa0 = (uint64)cowalloc(pagetable,va0);
+      pa0 = (uint64)cowalloc(pagetable,va0); //判断如果有写时复制，要开新的地址
     }
 
     if(pa0 == 0)

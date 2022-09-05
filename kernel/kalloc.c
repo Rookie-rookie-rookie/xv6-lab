@@ -14,7 +14,7 @@ void freerange(void *pa_start, void *pa_end);
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
-struct ret_stru{
+struct ret_stru{            //引用计数器结构体
   struct spinlock lock;
   int cnt[PHYSTOP / PGSIZE];
 }ref;
@@ -42,7 +42,7 @@ freerange(void *pa_start, void *pa_end)
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE){
-    ref.cnt[(uint64)p / PGSIZE] = 1;
+    ref.cnt[(uint64)p / PGSIZE] = 1; // 在kfree中将会对cnt[]减1，这里要先设为1，否则就会减成负数
     kfree(p);
   }
 }
@@ -62,7 +62,9 @@ kfree(void *pa)
 
     // Fill with junk to catch dangling refs.
   acquire(&ref.lock);
-  if(--ref.cnt[(uint64)pa / PGSIZE] == 0){ //如果没有引用了才释放空间
+  // 只有当引用计数为0了才回收空间
+  // 否则只是将引用计数减1
+  if(--ref.cnt[(uint64)pa / PGSIZE] == 0){
     release(&ref.lock);
 
     memset(pa, 1, PGSIZE);
@@ -89,7 +91,7 @@ kalloc(void)
   if(r){
     kmem.freelist = r->next;
     acquire(&ref.lock);
-    ref.cnt[(uint64)r / PGSIZE] = 1; 
+    ref.cnt[(uint64)r / PGSIZE] = 1; //初始化为1
     release(&ref.lock);
   }
   release(&kmem.lock);
