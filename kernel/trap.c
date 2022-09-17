@@ -16,6 +16,8 @@ void kernelvec();
 
 extern int devintr();
 
+int mmap_handler(int va, int cause);
+
 void
 trapinit(void)
 {
@@ -65,6 +67,14 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if(r_scause() == 13 || r_scause() == 15){
+    uint64 fault_va = r_stval();
+    if(PGROUNDDOWN(p->trapframe->sp) -1 < fault_va && fault_va < p->sz){
+      int cause = r_scause();
+      if(mmap_handler(fault_va,cause) != 0)p->killed = 1;
+    }else{
+      p->killed = 1;
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
@@ -218,3 +228,8 @@ devintr()
   }
 }
 
+
+int mmap_handler(int va,int cause)
+{
+  
+}
