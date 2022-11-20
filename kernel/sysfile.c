@@ -16,8 +16,6 @@
 #include "file.h"
 #include "fcntl.h"
 
-#define MAX_SYMLINK_DEPTH 10
-
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -318,34 +316,36 @@ sys_open(void)
     }
   }
 
-  if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
-    iunlockput(ip);
-    end_op();
-    return -1;
-  }
+  if(ip->type == T_SYMLINK && !(omode & O_NOFOLLOW)){
+    int depth = 100;
+    char path[MAXPATH];
 
-  if(ip->type == T_SYMLINK && omode != O_RDONLY){
-    for(int i=0;i < MAX_SYMLINK_DEPTH;i++){
-      if(readi(ip, 0, (uint64)path, 0, MAXPATH) != MAXPATH) {
+    for(int i = 0;i < depth; i++){
+      if(readi(ip,0,(uint64)path,0,MAXPATH) != MAXPATH){
         iunlockput(ip);
         end_op();
         return -1;
       }
       iunlockput(ip);
-      ip = namei(path);
-      if(ip == 0) {
+      if((ip = namei(path)) == 0){
         end_op();
         return -1;
       }
       ilock(ip);
       if(ip->type != T_SYMLINK)
         break;
+      if(i == depth - 1){
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
     }
-    if(ip->type == T_SYMLINK) {
-      iunlockput(ip);
-      end_op();
-      return -1;
-    }
+  }
+
+  if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
+    iunlockput(ip);
+    end_op();
+    return -1;
   }
 
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
@@ -511,30 +511,30 @@ sys_pipe(void)
   return 0;
 }
 
+
 uint64
 sys_symlink(void)
 {
   char target[MAXPATH], path[MAXPATH];
-  struct inode* ip;
-  
-  if(argstr(0,target,MAXPATH) < 0 || argstr(1,path,MAXPATH) < 0){
+  struct inode *ip;
+
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
     return -1;
-  }
 
   begin_op();
-
-  ip = create(path,T_SYMLINK,0,0);
-  if(ip == 0){
+  if((ip = create(path, T_SYMLINK, 0, 0)) == 0){
     end_op();
     return -1;
   }
 
-  if(writei(ip, 0, (uint64)target, 0, MAXPATH) < MAXPATH) {
+  if(writei(ip, 0, (uint64)target, 0, sizeof(target)) < sizeof(target)){
     iunlockput(ip);
     end_op();
     return -1;
   }
 
+  iupdate(ip);
+  iunlockput(ip);
   end_op();
   return 0;
 
