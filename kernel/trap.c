@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -229,7 +233,47 @@ devintr()
 }
 
 
-int mmap_handler(int va,int cause)
-{
-  
+int mmap_handler(int va, int cause) {
+  int i;
+  struct proc* p = myproc();
+
+  for(i = 0; i < 16; ++i) {
+    if(p->vma[i].used && p->vma[i].addr <= va && va <= p->vma[i].addr + p->vma[i].len - 1) {
+      break;
+    }
+  }
+  if(i == 16)
+    return -1;
+
+  int pte_flags = PTE_U;
+  if(p->vma[i].prot & PROT_READ) pte_flags |= PTE_R;
+  if(p->vma[i].prot & PROT_WRITE) pte_flags |= PTE_W;
+  if(p->vma[i].prot & PROT_EXEC) pte_flags |= PTE_X;
+
+  struct file* f = p->vma[i].file;
+
+  if((cause == 13 && f->readable == 0) || (cause == 15 && f->writable == 0)) return -1;
+
+  void* pa = kalloc();
+  if(pa == 0)
+    return -1;
+  memset(pa, 0, PGSIZE);
+
+  ilock(f->ip);
+  int offset = p->vma[i].offset + PGROUNDDOWN(va - p->vma[i].addr);
+  int readbytes = readi(f->ip, 0, (uint64)pa, offset, PGSIZE);
+  if(readbytes == 0) {
+    iunlock(f->ip);
+    kfree(pa);
+    return -1;
+  }
+  iunlock(f->ip);
+
+  // 添加页面映射
+  if(mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, (uint64)pa, pte_flags) != 0) {
+    kfree(pa);
+    return -1;
+  }
+
+  return 0;
 }
